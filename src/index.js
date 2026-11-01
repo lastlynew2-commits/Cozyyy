@@ -22,11 +22,11 @@ import {
   TextDisplayBuilder,
   UserSelectMenuBuilder
 } from "discord.js";
-import { createAntiSpamContainer, createAuthenticationManagerContainer, createAutomodContainer, createAutoRolesButtonsManagerContainer, createAutoRolesContainer, createBotLogsContainer, createBotsContainer, createCaptchaContainer, createDisconContainer, createFileExtensionsContainer, createHoneyPotContainer, createImageFilterContainer, createJailContainer, createMinimumAgeContainer, createMuteContainer, createOnDutyRoleContainer, createOtherServersContainer, createPreventiveSlowmodeContainer, createRaidModeContainer, createReportsContainer, createSanctionsContainer, createSetupContainer, createTagRoleContainer, createWelcomeButtonRow, createWelcomeButtonsManagerContainer, createWelcomeContainer, createWelcomePreviewEmbed, parseWelcomeButtons, setupMessageFlags } from "./commands/setup.js";
+import { createAntiSpamContainer, createAuthenticationManagerContainer, createAutomodContainer, createAutoRolesButtonsManagerContainer, createAutoRolesContainer, createBotLogsContainer, createBotsContainer, createCaptchaContainer, createDisconContainer, createFileExtensionsContainer, createHoneyPotContainer, createImageFilterContainer, createJailContainer, createLogsContainer, createMinimumAgeContainer, createMuteContainer, createOnDutyRoleContainer, createOtherServersContainer, createPreventiveSlowmodeContainer, createRaidModeContainer, createReportsContainer, createSanctionsContainer, createSetupContainer, createTagRoleContainer, createWelcomeButtonRow, createWelcomeButtonsManagerContainer, createWelcomeContainer, createWelcomePreviewEmbed, parseWelcomeButtons, setupMessageFlags } from "./commands/setup.js";
 import { categories, isEnabled, readGuildSettings, settingDefinitions, writeGuildSettings } from "./settings.js";
 import { executeModerationCommand } from "./commands/moderation.js";
 import { createMediaResponse, resolveMediaUserId } from "./commands/media.js";
-import { clearAfkStatus, createAfkConfirmation, formatAfkDuration, getAfkStatus, setAfkStatus } from "./commands/afk.js";
+import { clearAfkStatus, createAfkConfirmation, createAfkNoticeContainer, createWelcomeBackContainer, formatAfkDuration, getAfkStatus, setAfkStatus } from "./commands/afk.js";
 import { syncTagRole, toggleOnDutyRole } from "./commands/utilities.js";
 import { createFalseReportModal, createReportNotificationRoleModal, createReporterNotificationModal, createReportsReceivingModal, createTrustedRoleModal } from "./commands/report-forms.js";
 import { submitReport } from "./commands/reports.js";
@@ -46,19 +46,22 @@ function parseCommandDuration(value) {
 
 async function handlePrefixModeration(message) {
   if (!message.guild || message.author.bot || !message.member) return;
-  const prefix = readGuildSettings(message.guild.id).commands.prefix;
-  const isPrefixCommand = Boolean(prefix && prefix !== "disabled" && message.content.startsWith(prefix));
+  const prefix = String(readGuildSettings(message.guild.id).commands.prefix ?? "").trim();
+  const isPrefixCommand = Boolean(prefix && prefix.toLowerCase() !== "disabled" && message.content.startsWith(prefix));
   const args = isPrefixCommand ? message.content.slice(prefix.length).trim().split(/\s+/).filter(Boolean) : [];
   const action = args.shift()?.toLowerCase();
   if (isPrefixCommand && action === "afk") {
-    const status = setAfkStatus(message.guild.id, message.author.id, args.join(" "));
-    await message.reply({ embeds: [createAfkConfirmation(message.author, status)] });
+    const status = await setAfkStatus(message.guild, message.author.id, args.join(" "));
+    await message.reply({ components: [createAfkConfirmation(message.author, status)], flags: MessageFlags.IsComponentsV2 });
     return;
   }
 
-  const previousStatus = clearAfkStatus(message.guild.id, message.author.id);
+  const previousStatus = await clearAfkStatus(message.guild, message.author.id);
   if (previousStatus) {
-    await message.reply(`Welcome back! You were AFK for ${formatAfkDuration(previousStatus.since)}.`);
+    await message.reply({
+      components: [createWelcomeBackContainer(formatAfkDuration(previousStatus.since))],
+      flags: MessageFlags.IsComponentsV2
+    });
   }
 
   const afkTargets = new Map(message.mentions.users
@@ -71,13 +74,23 @@ async function handlePrefixModeration(message) {
   }
   const afkNotices = [...afkTargets.values()]
     .map((user) => ({ user, status: getAfkStatus(message.guild.id, user.id) }))
-    .filter(({ status }) => status)
-    .map(({ user, status }) => `${user.username} has been AFK for ${formatAfkDuration(status.since)}: ${status.reason}`);
+    .filter(({ status }) => status);
   if (afkNotices.length) {
-    await message.reply(afkNotices.join("\n"));
+    await message.reply({
+      components: [createAfkNoticeContainer(afkNotices)],
+      flags: MessageFlags.IsComponentsV2
+    });
   }
 
   if (!isPrefixCommand) return;
+  if (action === "help") {
+    await message.reply(`Prefix commands: ${prefix}setup, ${prefix}afk, ${prefix}report, ${prefix}onduty, ${prefix}avatar, ${prefix}cover, ${prefix}jail, ${prefix}unjail, ${prefix}timeout, ${prefix}mute`);
+    return;
+  }
+  if (action === "setup") {
+    await message.reply({ components: [createSetupContainer(message.guild.id)], flags: setupMessageFlags });
+    return;
+  }
   if (action === "report") {
     const targetToken = args.shift();
     const targetId = /^<@!?([0-9]{17,20})>$/.exec(targetToken ?? "")?.[1]
@@ -181,13 +194,29 @@ function createConfigureModal(definition, guildId) {
     );
   }
 
+  if (definition.id === "commands") {
+    const field = definition.fields[0];
+    const input = new TextInputBuilder()
+      .setCustomId(field.id)
+      .setLabel(field.label)
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setMaxLength(field.maxLength)
+      .setValue(currentSettings[field.id]);
+    return modal
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        "### Commands available with the prefix\n`help`, `setup`, `afk`, `report`, `onduty`, `avatar`, `cover`, `jail`, `unjail`, `timeout`, `mute`"
+      ))
+      .addLabelComponents(new LabelBuilder().setLabel(field.label).setTextInputComponent(input));
+  }
+
   modal.addComponents(...definition.fields.map((field) => {
     const input = new TextInputBuilder()
       .setCustomId(field.id)
       .setLabel(field.label)
       .setStyle(field.paragraph ? TextInputStyle.Paragraph : TextInputStyle.Short)
       .setRequired(false)
-      .setMaxLength(field.paragraph ? 1000 : 100)
+      .setMaxLength(field.maxLength ?? (field.paragraph ? 1000 : 100))
       .setValue(currentSettings[field.id]);
     return new ActionRowBuilder().addComponents(input);
   }));
@@ -578,7 +607,7 @@ function createWelcomeButtonModal(button = {}, scope = "welcome") {
   const name = new TextInputBuilder()
     .setCustomId("name")
     .setLabel("Button name")
-    .setPlaceholder("Something went wrong while applying that setting.")
+    .setPlaceholder("My button label")
     .setStyle(TextInputStyle.Short)
     .setMaxLength(80)
     .setRequired(true);
@@ -594,7 +623,7 @@ function createWelcomeButtonModal(button = {}, scope = "welcome") {
     .setMinValues(1)
     .setMaxValues(1)
     .setChannelTypes(ChannelType.GuildText);
-  name.setValue(button.name ?? "Something went wrong while applying that setting.");
+  if (button.name) name.setValue(button.name);
   if (button.emoji) emoji.setValue(button.emoji);
   if (button.channelId) channel.setDefaultChannels(button.channelId);
   modal.addLabelComponents(
@@ -749,8 +778,11 @@ async function handleInteraction(interaction) {
       await interaction.reply({ content: "AFK status can only be set in a server.", flags: MessageFlags.Ephemeral });
       return;
     }
-    const status = setAfkStatus(interaction.guildId, interaction.user.id, interaction.options.getString("reason") ?? "");
-    await interaction.reply({ embeds: [createAfkConfirmation(interaction.user, status)] });
+    const status = await setAfkStatus(interaction.guild, interaction.user.id, interaction.options.getString("reason") ?? "");
+    await interaction.reply({
+      components: [createAfkConfirmation(interaction.user, status)],
+      flags: MessageFlags.IsComponentsV2
+    });
     return;
   }
 
@@ -1079,6 +1111,16 @@ async function handleInteraction(interaction) {
     settings.sanctions.logsChannel = interaction.values[0] ?? "";
     writeGuildSettings(interaction.guildId, settings);
     await interaction.update({ components: [createBotLogsContainer(interaction.guildId)] });
+    return;
+  }
+
+  if (interaction.isChannelSelectMenu() && interaction.customId.startsWith("logs:channel:")) {
+    const field = interaction.customId.slice("logs:channel:".length);
+    if (!["miscellaneousChannel", "moderationChannel", "captchaChannel"].includes(field)) return;
+    const settings = readGuildSettings(interaction.guildId);
+    settings.logs[field] = interaction.values[0] ?? "";
+    writeGuildSettings(interaction.guildId, settings);
+    await interaction.update({ components: [createLogsContainer(interaction.guildId)] });
     return;
   }
 
@@ -1919,6 +1961,10 @@ async function handleInteraction(interaction) {
       });
       return;
     }
+    if (settingId === "logs") {
+      await interaction.update({ components: [createLogsContainer(interaction.guildId)] });
+      return;
+    }
     await interaction.showModal(createConfigureModal(definition, interaction.guildId));
     return;
   }
@@ -1940,12 +1986,17 @@ async function handleInteraction(interaction) {
     }
 
     const settings = readGuildSettings(interaction.guildId);
-    settings[settingId] = Object.fromEntries(definition.fields.map((field) => [
+    const values = Object.fromEntries(definition.fields.map((field) => [
       field.id,
       (field.options
         ? interaction.fields.getStringSelectValues(field.id)[0]
         : interaction.fields.getTextInputValue(field.id).trim()) || settings[settingId][field.id]
     ]));
+    if (settingId === "commands" && (/\s/.test(values.prefix) || values.prefix.length > 8)) {
+      await interaction.reply({ content: "Prefix must be 1 to 8 characters with no spaces.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+    settings[settingId] = values;
     writeGuildSettings(interaction.guildId, settings);
 
     if (interaction.isFromMessage()) {
@@ -2234,8 +2285,13 @@ async function applyWelcomeMessage(member) {
 
 client.on(Events.InteractionCreate, (interaction) => {
   handleInteraction(interaction).catch(async (error) => {
-    console.error("Interaction failed:", error);
-    const response = { content: "Something went wrong while applying that setting.", flags: MessageFlags.Ephemeral };
+    console.error(`Interaction failed (${interaction.customId ?? interaction.commandName ?? "unknown"}):`, error);
+    const message = error && typeof error === "object" && "message" in error && error.message
+      ? String(error.message)
+      : typeof error === "string" && error
+        ? error
+        : "Something went wrong while applying that setting.";
+    const response = { content: message, flags: MessageFlags.Ephemeral };
     if (interaction.replied || interaction.deferred) await interaction.followUp(response).catch(() => {});
     else await interaction.reply(response).catch(() => {});
   });

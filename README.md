@@ -29,7 +29,7 @@ For bot-arrival settings, grant the bot **Kick Members** and **Manage Roles** pe
 
 For welcome messages, grant **View Channels**, **Send Messages**, and **Embed Links** in the configured channel. Enable **Server Members Intent** in the Discord Developer Portal. Image edit accepts HTTPS URLs, including Discord CDN attachments. Manage buttons supports up to five channel-link buttons with an optional emoji.
 
-`/afk [reason]` and the configured-prefix form (for example, `!afk away for lunch`) set your AFK status per server. Your next message clears it. Mentions and replies to your messages show your reason and how long you have been AFK. Prefix commands require the privileged **Message Content Intent**.
+`/afk [reason]` and the configured-prefix form (for example, `!afk away for lunch`) set your AFK status per server. Your next message clears it. AFK confirmations, mention/reply notices, and welcome-back responses use Components V2 containers; mentions and replies to your messages show your reason and how long you have been AFK. Prefix commands require the privileged **Message Content Intent**.
 
 In `/setup` > Utilities, select or create the Tag Role and On-duty role. Tag Role follows Discord primary-guild tag profile updates; existing members receive the role on their next profile update. `/onduty` (or the configured-prefix form) toggles your own On-duty role.
 

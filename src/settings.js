@@ -259,16 +259,11 @@ export const settingDefinitions = [
   {
     id: "commands", category: "general", title: "Message commands",
     fields: [{
-      id: "prefix", label: "Prefix", default: "disabled",
-      options: [
-        { label: "Disabled", value: "disabled" },
-        { label: "?", value: "?" },
-        { label: "!", value: "!" },
-        { label: ">", value: ">" },
-        { label: "$", value: "$" }
-      ]
+      id: "prefix", label: "Prefix (or 'disabled' to turn off)", default: "!", maxLength: 8
     }],
-    summary: (value) => value.prefix === "disabled" ? "Disabled" : `Prefix: ${value.prefix}`
+    summary: (value) => value.prefix.toLowerCase() === "disabled"
+      ? "Disabled · Prefix commands unavailable"
+      : `Prefix: ${value.prefix}\nAvailable commands: ${["help", "setup", "afk", "report", "onduty", "avatar", "cover", "jail", "unjail", "timeout", "mute"].map((command) => `${value.prefix}${command}`).join(", ")}`
   },
   {
     id: "commandPermissions", category: "general", title: "Command Permissions",

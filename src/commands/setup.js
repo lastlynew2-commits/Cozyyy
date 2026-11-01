@@ -974,6 +974,37 @@ export function createBotLogsContainer(guildId) {
     ));
 }
 
+export function createLogsContainer(guildId) {
+  const { logs } = readGuildSettings(guildId);
+  const channels = [
+    ["miscellaneousChannel", "Miscellaneous logs"],
+    ["moderationChannel", "Moderation logs"],
+    ["captchaChannel", "Captcha logs"]
+  ];
+  const container = new ContainerBuilder()
+    .setAccentColor(accentColor)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent("## Logs configuration"))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent("Choose a text channel for each type of log."));
+
+  for (const [field, label] of channels) {
+    const channelSelect = new ChannelSelectMenuBuilder()
+      .setCustomId(`logs:channel:${field}`)
+      .setPlaceholder("Select a channel")
+      .setMinValues(0)
+      .setMaxValues(1)
+      .setChannelTypes(ChannelType.GuildText);
+    if (logs[field] && /^\d{17,20}$/.test(logs[field])) channelSelect.setDefaultChannels(logs[field]);
+
+    container
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(`### ${label}\n${/^\d{17,20}$/.test(logs[field]) ? `<#${logs[field]}>` : logs[field] ? `#${logs[field]}` : "Not set"}`))
+      .addActionRowComponents(new ActionRowBuilder().addComponents(channelSelect));
+  }
+
+  return container.addActionRowComponents(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("setup:category:moderation").setLabel("Back").setStyle(ButtonStyle.Secondary)
+  ));
+}
+
 export function createJailContainer(guildId) {
   const { jailRoleId, jailHandling } = readGuildSettings(guildId).sanctions;
   const roleSelect = new RoleSelectMenuBuilder()
